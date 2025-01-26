@@ -52,6 +52,7 @@ const PageNumber = styled.div`
   z-index: 1;
 `;
 
+const CHARS_PER_LINE = 90; // Approximate characters per line
 const LINES_PER_PAGE = 45;
 
 const MultiPageEditor: React.FC = () => {
@@ -61,31 +62,54 @@ const MultiPageEditor: React.FC = () => {
   );
   const [activePageId, setActivePageId] = useState(1);
 
-  const handleTextChange = (pageId: number, content: string) => {
-    const textarea = textAreaRefs.current[pageId];
-    if (!textarea) return;
+  const calculateLines = (content: string): number => {
+    const lines = content.split("\n");
+    let totalLines = 0;
 
+    lines.forEach((line) => {
+      totalLines += Math.ceil(line.length / CHARS_PER_LINE) || 1;
+    });
+
+    return totalLines;
+  };
+
+  const handleTextChange = (pageId: number, content: string) => {
     const updatedPages = [...pages];
     const pageIndex = pages.findIndex((p) => p.id === pageId);
 
-    if (textarea.scrollHeight > textarea.clientHeight) {
-      const lines = content.split("\n");
-      const currentPageLines = lines.slice(0, LINES_PER_PAGE);
-      const nextPageLines = lines.slice(LINES_PER_PAGE);
+    const totalLines = calculateLines(content);
 
-      updatedPages[pageIndex].content = currentPageLines.join("\n");
+    if (totalLines > LINES_PER_PAGE) {
+      const lines = content.split("\n");
+      let currentContent = "";
+      let nextContent = "";
+      let currentLines = 0;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const lineCount = Math.ceil(line.length / CHARS_PER_LINE) || 1;
+
+        if (currentLines + lineCount <= LINES_PER_PAGE) {
+          currentContent += line + (i < lines.length - 1 ? "\n" : "");
+          currentLines += lineCount;
+        } else {
+          nextContent += line + (i < lines.length - 1 ? "\n" : "");
+        }
+      }
+
+      updatedPages[pageIndex].content = currentContent;
 
       if (pageId === pages.length) {
         const newPageId = pages.length + 1;
         updatedPages.push({
           id: newPageId,
-          content: nextPageLines.join("\n"),
+          content: nextContent,
         });
         setActivePageId(newPageId);
       } else {
         const nextPageIndex = pageIndex + 1;
         updatedPages[nextPageIndex].content =
-          nextPageLines.join("\n") +
+          nextContent +
           (updatedPages[nextPageIndex].content
             ? "\n" + updatedPages[nextPageIndex].content
             : "");
