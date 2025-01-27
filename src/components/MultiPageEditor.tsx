@@ -10,8 +10,8 @@ const EditorContainer = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 20px;
-  gap: 20px;
+  padding: 0px;
+  gap: 0px;
 `;
 
 const Toolbar = styled.div`
