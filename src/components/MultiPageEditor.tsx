@@ -90,7 +90,7 @@ const PageNumber = styled.div`
   z-index: 1;
 `;
 
-const LINES_PER_PAGE = 45;
+const LINES_PER_PAGE = 40;
 
 const FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32];
 const FONT_FAMILIES = [
@@ -150,34 +150,6 @@ const MultiPageEditor: React.FC = () => {
     setPages(updatedPages);
   };
 
-  const applyStyles = () => {
-    const style = {
-      fontSize: `${fontSize}px`,
-      fontFamily,
-      fontWeight: isBold ? "bold" : "normal",
-      fontStyle: isItalic ? "italic" : "normal",
-      textDecoration: isUnderline ? "underline" : "none",
-    };
-
-    Object.values(textAreaRefs.current).forEach((textarea) => {
-      if (textarea) {
-        Object.assign(textarea.style, style);
-      }
-    });
-  };
-
-  useEffect(() => {
-    if (textAreaRefs.current[activePageId]) {
-      const textarea = textAreaRefs.current[activePageId];
-      textarea?.focus();
-      if (textarea) {
-        const length = textarea.value.length;
-        textarea.setSelectionRange(length, length);
-        applyStyles();
-      }
-    }
-  }, [activePageId, fontSize, fontFamily, isBold, isItalic, isUnderline]);
-
   const handleKeyDown = (
     e: React.KeyboardEvent<HTMLTextAreaElement>,
     pageId: number
@@ -185,22 +157,61 @@ const MultiPageEditor: React.FC = () => {
     const textarea = textAreaRefs.current[pageId];
     if (!textarea) return;
 
-    // Check if we're at the last line of the page
-    const isAtLastLine = textarea.scrollHeight > textarea.clientHeight;
+    // Handle backspace at start of page (except first page)
+    if (
+      e.key === "Backspace" &&
+      textarea.selectionStart === 0 &&
+      textarea.selectionEnd === 0 &&
+      pageId > 1
+    ) {
+      e.preventDefault();
 
-    if (isAtLastLine && e.key !== "Backspace") {
-      e.preventDefault(); // Prevent the key from being added to current page
+      const updatedPages = [...pages];
+      const currentPageIndex = pages.findIndex((p) => p.id === pageId);
+      const prevPageIndex = currentPageIndex - 1;
 
-      // If we're on the last page, create a new one
-      if (pageId === pages.length) {
-        const newPageId = pages.length + 1;
-        setPages([...pages, { id: newPageId, content: "" }]);
-        setActivePageId(newPageId);
-      } else {
-        // Move to next existing page
-        setActivePageId(pageId + 1);
-      }
+      // Move content to previous page
+      const prevPageContent = updatedPages[prevPageIndex].content;
+      updatedPages[prevPageIndex].content =
+        prevPageContent +
+        (prevPageContent ? "\n" : "") +
+        updatedPages[currentPageIndex].content;
+
+      // Remove current page's content
+      updatedPages[currentPageIndex].content = "";
+
+      setPages(updatedPages);
+      setActivePageId(pageId - 1);
+
+      // Focus on the end of previous page's content
+      setTimeout(() => {
+        const prevTextarea = textAreaRefs.current[pageId - 1];
+        if (prevTextarea) {
+          prevTextarea.focus();
+          prevTextarea.setSelectionRange(
+            prevPageContent.length,
+            prevPageContent.length
+          );
+        }
+      }, 0);
+
       return;
+    }
+
+    // If we're at the last line (content exceeds height)
+    if (textarea.scrollHeight > textarea.clientHeight) {
+      if (e.key !== "Backspace") {
+        e.preventDefault();
+
+        // Create new page if we're on the last page
+        if (pageId === pages.length) {
+          setPages([...pages, { id: pages.length + 1, content: e.key }]);
+          setActivePageId(pages.length + 1);
+        } else {
+          // Move to next page
+          setActivePageId(pageId + 1);
+        }
+      }
     }
 
     // Original up/down arrow navigation
@@ -218,6 +229,137 @@ const MultiPageEditor: React.FC = () => {
       setActivePageId(pageId - 1);
     }
   };
+
+  const applyStyles = () => {
+    const style = {
+      fontSize: `${fontSize}px`,
+      fontFamily,
+      fontWeight: isBold ? "bold" : "normal",
+      fontStyle: isItalic ? "italic" : "normal",
+      textDecoration: isUnderline ? "underline" : "none",
+    };
+
+    Object.values(textAreaRefs.current).forEach((textarea) => {
+      if (textarea) {
+        Object.assign(textarea.style, style);
+      }
+    });
+  };
+
+  const handlePaste = (
+    e: React.ClipboardEvent<HTMLTextAreaElement>,
+    pageId: number
+  ) => {
+    e.preventDefault();
+    const pastedText = e.clipboardData.getData("text");
+    const textarea = textAreaRefs.current[pageId];
+    if (!textarea) return;
+
+    const cursorPosition = textarea.selectionStart;
+    const currentContent = textarea.value;
+
+    // Calculate available lines in current page
+    const currentLines = currentContent.split("\n").length;
+    const availableLines = LINES_PER_PAGE - currentLines;
+
+    // Split pasted content into lines
+    const pastedLines = pastedText.split("\n");
+
+    // Update pages with pasted content
+    const updatedPages = [...pages];
+    let currentPageContent = currentContent.slice(0, cursorPosition);
+    const remainingContent = currentContent.slice(cursorPosition);
+    let currentLineCount = currentPageContent.split("\n").length;
+    let currentPageIndex = pages.findIndex((p) => p.id === pageId);
+
+    // Add lines to current page until it's full
+    for (let i = 0; i < pastedLines.length; i++) {
+      if (currentLineCount < LINES_PER_PAGE) {
+        currentPageContent += pastedLines[i] + "\n";
+        currentLineCount++;
+      } else {
+        // Current page is full, create or update next page
+        updatedPages[currentPageIndex].content = currentPageContent.trim();
+
+        // If we're on the last page, create a new one
+        if (currentPageIndex === updatedPages.length - 1) {
+          updatedPages.push({
+            id: updatedPages.length + 1,
+            content: "",
+          });
+        }
+
+        // Move to next page
+        currentPageIndex++;
+        currentPageContent = pastedLines[i] + "\n";
+        currentLineCount = 1;
+      }
+    }
+
+    // Add any remaining content from the original page
+    if (remainingContent) {
+      currentPageContent += remainingContent;
+    }
+
+    // Update the current page
+    updatedPages[currentPageIndex].content = currentPageContent.trim();
+
+    // Check for overflow on the final page
+    const finalTextarea =
+      textAreaRefs.current[updatedPages[currentPageIndex].id];
+    if (
+      finalTextarea &&
+      finalTextarea.scrollHeight > finalTextarea.clientHeight
+    ) {
+      const lines = currentPageContent.split("\n");
+      const currentPageLines = lines.slice(0, LINES_PER_PAGE);
+      const overflowLines = lines.slice(LINES_PER_PAGE);
+
+      updatedPages[currentPageIndex].content = currentPageLines.join("\n");
+
+      // Add overflow to new page if needed
+      if (overflowLines.length > 0) {
+        if (currentPageIndex === updatedPages.length - 1) {
+          updatedPages.push({
+            id: updatedPages.length + 1,
+            content: overflowLines.join("\n"),
+          });
+        } else {
+          const nextPageContent =
+            overflowLines.join("\n") +
+            "\n" +
+            (updatedPages[currentPageIndex + 1]?.content || "");
+          updatedPages[currentPageIndex + 1].content = nextPageContent.trim();
+        }
+      }
+    }
+
+    setPages(updatedPages);
+
+    // Focus on the page where the paste ended
+    setTimeout(() => {
+      const lastPage = textAreaRefs.current[updatedPages[currentPageIndex].id];
+      if (lastPage) {
+        lastPage.focus();
+        lastPage.setSelectionRange(
+          currentPageContent.length,
+          currentPageContent.length
+        );
+      }
+    }, 0);
+  };
+
+  useEffect(() => {
+    if (textAreaRefs.current[activePageId]) {
+      const textarea = textAreaRefs.current[activePageId];
+      textarea?.focus();
+      if (textarea) {
+        const length = textarea.value.length;
+        textarea.setSelectionRange(length, length);
+        applyStyles();
+      }
+    }
+  }, [activePageId, fontSize, fontFamily, isBold, isItalic, isUnderline]);
 
   return (
     <EditorContainer>
@@ -269,6 +411,7 @@ const MultiPageEditor: React.FC = () => {
             value={page.content}
             onChange={(e) => handleTextChange(page.id, e.target.value)}
             onKeyDown={(e) => handleKeyDown(e, page.id)}
+            onPaste={(e) => handlePaste(e, page.id)}
             placeholder={page.id === 1 ? "Start writing here..." : ""}
           />
           <PageNumber>Page {page.id}</PageNumber>
