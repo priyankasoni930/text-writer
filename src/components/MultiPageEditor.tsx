@@ -156,8 +156,8 @@ const MultiPageEditor = () => {
             position: relative;
             left: 0;
             right: 0;
-            height: 1px;
-            background-color: #080707;
+            height: 10px;
+            background-color: #ddd;
             width: calc(100% + 20px);
             z-index: 2;
             float: left;
